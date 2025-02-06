@@ -5,5 +5,5 @@
 Key components:
 - Data processing pipelines
 - Analytics utilities and shared libraries
-- Reporting frameworks
+- Reporting
 - Documentation and best practice
