@@ -1,1 +1,6 @@
-
+# Ignore unnecessary files
+*.log
+*.pyc
+__pycache__/
+terraform.tfstate
+.idea/
