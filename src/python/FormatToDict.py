@@ -34,7 +34,7 @@ def run(argv=None):
         project=args.project,
         region=args.region,
         temp_location=args.temp_location,
-        save_main_session=True
+        save_main_session=False
     )
 
     # Define BigQuery schema
