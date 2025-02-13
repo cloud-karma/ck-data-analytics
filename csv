@@ -1,0 +1,39 @@
+from google.cloud import bigquery
+from google.cloud import storage
+
+def load_gcs_to_bigquery(bucket_name, blob_name, dataset_id, table_id):
+    # Initialize clients
+    storage_client = storage.Client()
+    bigquery_client = bigquery.Client()
+
+    # Define the GCS URI
+    uri = f"gs://{bucket_name}/{blob_name}"
+
+    # Define the BigQuery dataset and table
+    dataset_ref = bigquery_client.dataset(dataset_id)
+    table_ref = dataset_ref.table(table_id)
+
+    # Configure the load job
+    job_config = bigquery.LoadJobConfig(
+        source_format=bigquery.SourceFormat.CSV,
+        skip_leading_rows=1,  # Skip header row
+        autodetect=True,  # Automatically detect schema
+    )
+
+    # Load the data from GCS to BigQuery
+    load_job = bigquery_client.load_table_from_uri(
+        uri, table_ref, job_config=job_config
+    )
+
+    # Wait for the job to complete
+    load_job.result()
+
+    print(f"Loaded {load_job.output_rows} rows into {dataset_id}.{table_id}.")
+
+# Example usage
+bucket_name = "your-gcs-bucket"
+blob_name = "your-file.csv"
+dataset_id = "your_dataset"
+table_id = "your_table"
+
+load_gcs_to_bigquery(bucket_name, blob_name, dataset_id, table_id)

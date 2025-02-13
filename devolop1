@@ -1,0 +1,41 @@
+from google.cloud import bigquery
+from google.cloud import storage
+import argparse
+
+def load_data_from_gcs_to_bigquery(bucket_name, file_name, dataset_id, table_id, file_format):
+    client = bigquery.Client()
+    
+    # Define GCS file URI
+    file_uri = f"gs://{bucket_name}/{file_name}"
+    
+    # Define file format mapping
+    format_mapping = {
+        "CSV": bigquery.SourceFormat.CSV,
+        "JSON": bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+        "PARQUET": bigquery.SourceFormat.PARQUET,
+        "AVRO": bigquery.SourceFormat.AVRO
+    }
+    
+    if file_format not in format_mapping:
+        raise ValueError(f"Unsupported file format: {file_format}. Choose from {list(format_mapping.keys())}")
+
+    job_config = bigquery.LoadJobConfig(source_format=format_mapping[file_format])
+
+    # Load data into BigQuery
+    load_job = client.load_table_from_uri(file_uri, f"{dataset_id}.{table_id}", job_config=job_config)
+    load_job.result()  # Wait for the job to complete
+
+    print(f"Loaded {file_name} from GCS to BigQuery table {dataset_id}.{table_id} as {file_format}")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Load file from GCS to BigQuery")
+    parser.add_argument("--bucket_name", required=True, help="GCS bucket name")
+    parser.add_argument("--file_name", required=True, help="File name in GCS")
+    parser.add_argument("--dataset_id", required=True, help="BigQuery dataset ID")
+    parser.add_argument("--table_id", required=True, help="BigQuery table ID")
+    parser.add_argument("--file_format", required=True, help="File format (CSV, JSON, PARQUET, AVRO)")
+
+    args = parser.parse_args()
+
+    load_data_from_gcs_to_bigquery(args.bucket_name, args.file_name, args.dataset_id, args.table_id, args.file_format)
+  
