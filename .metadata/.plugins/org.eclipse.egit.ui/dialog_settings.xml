@@ -7,9 +7,11 @@
 		<item value="github.com"/>
 	</list>
 	<list key="CommitDialog.authorValues">
+		<item value="mounika &lt;mounikareddy5527@gmail.com&gt;"/>
 		<item value="mouni &lt;mouni@Mounika.attlocal.net&gt;"/>
 	</list>
 	<list key="CommitDialog.committerValues">
+		<item value="mounika &lt;mounikareddy5527@gmail.com&gt;"/>
 		<item value="mouni &lt;mouni@Mounika.attlocal.net&gt;"/>
 	</list>
 	<list key="RepositorySelectionPage.UsedUris">
