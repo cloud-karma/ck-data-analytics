@@ -1,0 +1,46 @@
+from airflow import DAG
+from airflow.providers.google.cloud.transfers.gcs_to_bigquery import GCSToBigQueryOperator
+from airflow.providers.google.cloud.operators.gcs import GCSMoveObjectOperator
+from airflow.utils.dates import days_ago
+
+# Default DAG arguments
+default_args = {
+    "owner": "airflow",
+    "depends_on_past": False,
+    "start_date": days_ago(1),
+    "retries": 1,
+}
+
+# DAG definition
+with DAG(
+    dag_id="gcs_to_bigquery_with_file_movement",
+    default_args=default_args,
+    schedule_interval="@daily",
+    catchup=False,
+    tags=["gcs", "bigquery", "schema_evolution"],
+) as dag:
+
+    # Task 1: Load CSV from GCS to BigQuery (with Schema Evolution)
+    load_gcs_to_bq = GCSToBigQueryOperator(
+        task_id="load_gcs_to_bigquery",
+        bucket="your-gcs-bucket",
+        source_objects=["raw/data.csv"],  # File in 'raw/' folder
+        destination_project_dataset_table="your_project.your_dataset.your_table",
+        schema_update_options=["ALLOW_FIELD_ADDITION"],  # Schema Evolution
+        write_disposition="WRITE_APPEND",
+        autodetect=True,  # Detects new schema automatically
+        source_format="CSV",
+        skip_leading_rows=1,  # Skip header row
+    )
+
+    # Task 2: Move File from 'raw/' to 'processed/' in GCS
+    move_file = GCSMoveObjectOperator(
+        task_id="move_file_to_processed",
+        source_bucket="your-gcs-bucket",
+        source_object="raw/data.csv",
+        destination_bucket="your-gcs-bucket",
+        destination_object="processed/data.csv",
+    )
+
+    # Define task dependencies
+    load_gcs_to_bq >> move_file
