@@ -1,0 +1,39 @@
+from airflow import DAG
+from airflow.providers.google.cloud.transfers.gcs_to_bigquery import GCSToBigQueryOperator
+from airflow.utils.dates import days_ago
+
+# DAG default arguments
+default_args = {
+    "owner": "airflow",
+    "depends_on_past": False,
+    "start_date": days_ago(1),  # Start the DAG from yesterday
+    "retries": 1,
+}
+
+# DAG definition
+with DAG(
+    dag_id="gcs_to_bigquery_dag",
+    default_args=default_args,
+    schedule_interval="@daily",  # Run daily
+    catchup=False,  
+    tags=["gcs", "bigquery"],
+) as dag:
+
+    # Task to load data from GCS to BigQuery
+    load_gcs_to_bq = GCSToBigQueryOperator(
+        task_id="load_gcs_to_bigquery",
+        bucket="your-gcs-bucket-name",  # Replace with your GCS bucket
+        source_objects=["path/to/your_file.csv"],  # Path to your file in GCS
+        destination_project_dataset_table="your_project.your_dataset.your_table",  # Replace with your BQ table
+        schema_fields=[
+            {"name": "id", "type": "INTEGER", "mode": "NULLABLE"},
+            {"name": "name", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "age", "type": "INTEGER", "mode": "NULLABLE"},
+        ],  # Define schema if table doesn't exist
+        write_disposition="WRITE_APPEND",  # Options: WRITE_TRUNCATE, WRITE_APPEND, WRITE_EMPTY
+        skip_leading_rows=1,  # Skip header row if exists
+        source_format="CSV",  # File format: CSV, JSON, PARQUET, etc.
+        autodetect=True,  # Auto-detect schema
+    )
+
+    load_gcs_to_bq  # Set task execution order

@@ -1,0 +1,75 @@
+import requests
+import time
+from google.cloud import pubsub_v1
+from google.cloud import storage
+
+# Replace with your GCP project details
+PROJECT_ID = "your-gcp-project-id"
+TOPIC_ID = "crypto-price-topic"
+BUCKET_NAME = "your-gcs-bucket"
+HISTORICAL_DATA_FILE = "crypto_historical_data.csv"
+
+# Replace with your CoinGecko API key (if required) and crypto details
+CRYPTO_ID = "bitcoin"  # Can be changed to any crypto (e.g., ethereum, dogecoin)
+CURRENCY = "usd"
+API_URL = f"https://api.coingecko.com/api/v3/simple/price?ids={CRYPTO_ID}&vs_currencies={CURRENCY}"
+
+# Initialize Pub/Sub publisher client
+publisher = pubsub_v1.PublisherClient()
+topic_path = publisher.topic_path(PROJECT_ID, TOPIC_ID)
+
+# Initialize GCS client
+storage_client = storage.Client()
+
+def get_crypto_price():
+    """
+    Fetches the current price of a cryptocurrency using the CoinGecko API.
+    """
+    try:
+        response = requests.get(API_URL)
+        response.raise_for_status()
+        data = response.json()
+        price = data[CRYPTO_ID][CURRENCY]
+        print(f"Fetched {CRYPTO_ID.capitalize()} Price: {price} {CURRENCY.upper()}")
+        return price
+    except Exception as e:
+        print(f"Error fetching price data: {e}")
+        return None
+
+def publish_to_pubsub(price):
+    """
+    Publishes the cryptocurrency price to a Pub/Sub topic.
+    """
+    try:
+        message = f"{CRYPTO_ID.capitalize()} Price: {price} {CURRENCY.upper()}"
+        future = publisher.publish(topic_path, message.encode("utf-8"))
+        print(f"Published message ID: {future.result()}")
+    except Exception as e:
+        print(f"Error publishing to Pub/Sub: {e}")
+
+def upload_historical_data(file_path):
+    """
+    Uploads historical cryptocurrency data to Google Cloud Storage.
+    """
+    try:
+        bucket = storage_client.bucket(BUCKET_NAME)
+        blob = bucket.blob(HISTORICAL_DATA_FILE)
+        blob.upload_from_filename(file_path)
+        print(f"Uploaded historical data to GCS: {file_path}")
+    except Exception as e:
+        print(f"Error uploading historical data to GCS: {e}")
+
+def main():
+    # Step 1: Upload historical data to GCS
+    historical_data_path = "./path/to/crypto_historical_data.csv"
+    upload_historical_data(historical_data_path)
+
+    # Step 2: Real-time data ingestion
+    while True:
+        price = get_crypto_price()
+        if price:
+            publish_to_pubsub(price)
+        time.sleep(10)  # Fetch data every 10 seconds
+
+if __name__ == "__main__":
+    main()
