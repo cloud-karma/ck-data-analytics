@@ -1,0 +1,69 @@
+import base64
+import json
+import logging
+from google.cloud import pubsub_v1
+
+# Set your project ID and alert topic name
+PROJECT_ID = "your-gcp-project-id"
+ALERT_TOPIC = "anomalies"  # short name; full will be resolved in code
+
+# Pub/Sub publisher
+publisher = pubsub_v1.PublisherClient()
+alert_topic_path = publisher.topic_path(PROJECT_ID, ALERT_TOPIC)
+
+# In-memory cache for last prices
+price_cache = {}  # format: { 'bitcoin': 28000.0 }
+
+def detect_anomaly(event, context):
+    """
+    Cloud Function triggered by a Pub/Sub message from real-time crypto price stream.
+    It detects anomalies based on price change > 5% and sends alerts.
+    """
+
+    try:
+        if 'data' not in event:
+            logging.warning("No data in Pub/Sub message.")
+            return
+
+        # Decode and parse message
+        pubsub_message = base64.b64decode(event['data']).decode('utf-8')
+        data = json.loads(pubsub_message)
+
+        coin = data.get('coin')
+        price = float(data.get('price'))
+        timestamp = data.get('timestamp')
+
+        if not coin or not price or not timestamp:
+            logging.warning("Incomplete data received.")
+            return
+
+        previous_price = price_cache.get(coin)
+
+        if previous_price:
+            percent_change = ((price - previous_price) / previous_price) * 100
+
+            if abs(percent_change) > 5:
+                alert = {
+                    'coin': coin,
+                    'current_price': price,
+                    'previous_price': previous_price,
+                    'timestamp': timestamp,
+                    'percent_change': round(percent_change, 2),
+                    'alert': 'Price change > 5%'
+                }
+
+                # Log the alert
+                logging.warning(f"🚨 Anomaly Detected: {alert}")
+
+                # Publish alert to 'anomalies' topic
+                publisher.publish(
+                    alert_topic_path,
+                    json.dumps(alert).encode('utf-8'),
+                    origin='anomaly-detector'
+                )
+
+        # Update cache
+        price_cache[coin] = price
+
+    except Exception as e:
+        logging.exception("Error processing anomaly detection function.")
