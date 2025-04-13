@@ -3,7 +3,7 @@ from apache_beam.options.pipeline_options import PipelineOptions, StandardOption
 import json
 from datetime import datetime
 
-class ParseMessage(beam.DoFn):
+class ParseMessage(beam.DoFn): --
     def process(self, element):
         row = json.loads(element)
         yield {
