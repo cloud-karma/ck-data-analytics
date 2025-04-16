@@ -1,0 +1,44 @@
+# Task 1: Local PDF Document Loader and Embedding
+# pip install langchain faiss-cpu transformers pypdf sentence-transformers huggingface-hub
+
+import os
+
+# Attempt to import LangChain modules with error handling
+try:
+    from langchain.vectorstores import FAISS
+    from langchain.embeddings import HuggingFaceEmbeddings
+    from langchain.document_loaders import PyPDFLoader
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
+except ModuleNotFoundError as e:
+    print("\n🚨 Required module not found. Please ensure all dependencies are installed:")
+    print("Run: pip install langchain faiss-cpu transformers pypdf sentence-transformers huggingface-hub")
+    raise e
+
+# Load local PDFs and embed them
+def load_local_pdfs(pdf_dir):
+    all_docs = []
+    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+
+    for file in os.listdir(pdf_dir):
+        if file.endswith(".pdf"):
+            path = os.path.join(pdf_dir, file)
+            print(f"📄 Loading: {file}")
+            loader = PyPDFLoader(path)
+            docs = loader.load()
+            chunks = splitter.split_documents(docs)
+            all_docs.extend(chunks)
+
+    print("\n✨ Creating vector store from document chunks...")
+    embeddings = HuggingFaceEmbeddings()
+    vectorstore = FAISS.from_documents(all_docs, embeddings)
+    print("✅ Vector store created!")
+    return vectorstore
+
+def main():
+    print("\n📁 PDF Loader & Embedder")
+    pdf_path = input("Enter the path to the directory containing your PDFs: ")
+    vectordb = load_local_pdfs(pdf_path)
+    print("\n🎉 Task 1 Complete: You can now use the vector store in your QA chain.")
+
+if __name__ == "__main__":
+    main()

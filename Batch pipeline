@@ -1,0 +1,89 @@
+import apache_beam as beam
+from apache_beam.options.pipeline_options import PipelineOptions, GoogleCloudOptions, StandardOptions, SetupOptions
+import csv
+import json
+from datetime import datetime
+from apache_beam.io.gcp.bigquery import WriteToBigQuery
+
+class ParseCSVLine(beam.DoFn):
+    def process(self, element):
+        try:
+            values = list(csv.reader([element]))[0]
+            coin, timestamp, price = values
+            return [{
+                'coin': coin.strip().lower(),
+                'timestamp': timestamp.strip(),
+                'price': float(price)
+            }]
+        except Exception as e:
+            # skip malformed rows
+            return []
+
+class NormalizeTimestamp(beam.DoFn):
+    def process(self, element):
+        try:
+            ts = datetime.strptime(element['timestamp'], "%Y-%m-%dT%H:%M:%SZ")
+            element['date'] = ts.date().isoformat()  # normalize to date only
+            return [element]
+        except Exception:
+            return []
+
+class PrepareForAggregation(beam.DoFn):
+    def process(self, element):
+        key = (element['coin'], element['date'])
+        value = element['price']
+        return [(key, value)]
+
+class ComputeAggregates(beam.DoFn):
+    def process(self, element):
+        (coin, date), prices = element
+        return [{
+            'coin': coin,
+            'date': date,
+            'min_price': min(prices),
+            'max_price': max(prices),
+            'avg_price': sum(prices) / len(prices)
+        }]
+
+def run():
+    options = PipelineOptions()
+    gcp_options = options.view_as(GoogleCloudOptions)
+    gcp_options.project = 'your-gcp-project-id'
+    gcp_options.job_name = 'batch-crypto-aggregation'
+    gcp_options.staging_location = 'gs://your-bucket-name/staging'
+    gcp_options.temp_location = 'gs://your-bucket-name/temp'
+    options.view_as(StandardOptions).runner = 'DataflowRunner'
+    options.view_as(SetupOptions).save_main_session = True
+
+    input_file = 'gs://your-bucket-name/historical_data.csv'
+    output_table = 'your-gcp-project-id:crypto_dataset.historical_prices'
+
+    schema = {
+        'fields': [
+            {'name': 'coin', 'type': 'STRING', 'mode': 'REQUIRED'},
+            {'name': 'date', 'type': 'DATE', 'mode': 'REQUIRED'},
+            {'name': 'min_price', 'type': 'FLOAT', 'mode': 'NULLABLE'},
+            {'name': 'max_price', 'type': 'FLOAT', 'mode': 'NULLABLE'},
+            {'name': 'avg_price', 'type': 'FLOAT', 'mode': 'NULLABLE'},
+        ]
+    }
+
+    with beam.Pipeline(options=options) as p:
+        (
+            p
+            | 'Read CSV from GCS' >> beam.io.ReadFromText(input_file, skip_header_lines=1)
+            | 'Parse CSV lines' >> beam.ParDo(ParseCSVLine())
+            | 'Normalize timestamps' >> beam.ParDo(NormalizeTimestamp())
+            | 'Key by coin and date' >> beam.ParDo(PrepareForAggregation())
+            | 'Group by coin and date' >> beam.GroupByKey()
+            | 'Compute daily aggregates' >> beam.ParDo(ComputeAggregates())
+            | 'Write to BigQuery' >> WriteToBigQuery(
+                output_table,
+                schema=schema,
+                write_disposition=beam.io.BigQueryDisposition.WRITE_TRUNCATE,
+                create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED
+            )
+        )
+
+if __name__ == '__main__':
+    run()
