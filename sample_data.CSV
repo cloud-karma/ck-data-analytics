@@ -1,0 +1,37 @@
+import apache_beam as beam
+from apache_beam.options.pipeline_options import PipelineOptions, GoogleCloudOptions
+
+# Set your project and paths here
+project_id = 'your-project-id'  # Replace with your project ID
+bucket_path = 'gs://your-bucket-name/sample-data.csv'  # Replace with your GCS bucket and file path
+bq_table = 'your-project-id:your_dataset_name.your_table_name'  # Replace with your BigQuery table
+
+class FormatCSV(beam.DoFn):
+    def process(self, element):
+        # This splits each line in the CSV and transforms it to a dictionary for BigQuery
+        fields = element.split(',')
+        return [{'field1': fields[0], 'field2': fields[1]}]
+
+def run_pipeline():
+    # Set up pipeline options
+    options = PipelineOptions()
+    gcp_options = options.view_as(GoogleCloudOptions)
+    gcp_options.project = project_id  # Specify your GCP project
+    gcp_options.temp_location = 'gs://your-bucket-name/temp/'  # Set a temp GCS path for Dataflow
+    options.view_as(PipelineOptions).runner = 'DataflowRunner'  # Choose Dataflow as the runner
+
+    # Create and run the pipeline
+    with beam.Pipeline(options=options) as p:
+        (
+            p
+            | 'Read from GCS' >> beam.io.ReadFromText(bucket_path)  # Read data from GCS
+            | 'Transform Data' >> beam.ParDo(FormatCSV())  # Apply transformation
+            | 'Write to BigQuery' >> beam.io.WriteToBigQuery(
+                bq_table,  # Destination table in BigQuery
+                schema='field1:STRING, field2:STRING',  # Define the schema for BigQuery
+                write_disposition=beam.io.BigQueryDisposition.WRITE_TRUNCATE  # Overwrite data if needed
+            )
+        )
+
+if __name__ == '__main__':
+    run_pipeline()
