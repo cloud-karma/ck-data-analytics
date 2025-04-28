@@ -17,7 +17,7 @@ move_files_to_processed = GCSToGCSOperator(
     source_object=f"{RAW_FOLDER}*",
     destination_bucket=BUCKET_NAME,
     destination_object=PROCESSED_FOLDER,
-    move_object=True, -- Srini
+    move_object=True, -- Srini vas
     google_cloud_storage_conn_id=GCP_CONN_ID,
 )
 
