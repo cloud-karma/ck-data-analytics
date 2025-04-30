@@ -1,0 +1,61 @@
+import os
+from langchain.chains import RetrievalQA
+from langchain.vectorstores import FAISS
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.document_loaders import PyPDFLoader
+from langchain.llms import HuggingFacePipeline
+from langchain.memory import ConversationBufferMemory
+from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+
+# Load TinyLlama Model (or substitute with another small model if needed)
+def load_tinyllama():
+    model_name = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_pretrained(model_name)
+    pipe = pipeline("text-generation", model=model, tokenizer=tokenizer, max_new_tokens=256)
+    llm = HuggingFacePipeline(pipeline=pipe)
+    return llm
+
+# Load local PDF documents and embed them
+def load_local_pdfs(pdf_folder):
+    all_docs = []
+    for filename in os.listdir(pdf_folder):
+        if filename.endswith(".pdf"):
+            loader = PyPDFLoader(os.path.join(pdf_folder, filename))
+            docs = loader.load()
+            all_docs.extend(docs)
+    embeddings = HuggingFaceEmbeddings()
+    vectorstore = FAISS.from_documents(all_docs, embeddings)
+    return vectorstore
+
+def main():
+    print("\n🤖 Welcome to your Personal Research Assistant!")
+    pdf_folder = input("\n📂 Enter the path to your PDF folder: ")
+
+    print("\n📚 Loading and processing local PDFs...")
+    vectordb = load_local_pdfs(pdf_folder)
+
+    llm = load_tinyllama()
+    memory = ConversationBufferMemory(memory_key="chat_history")
+
+    qa_chain = RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff",
+        retriever=vectordb.as_retriever(),
+        memory=memory
+    )
+
+    print("\n✅ Ready! Start asking questions about your documents. Type 'exit' to quit.\n")
+
+    while True:
+        user_input = input("You: ")
+        if user_input.lower() in ["exit", "quit"]:
+            print("\n👋 Goodbye!")
+            break
+
+        response = qa_chain.run(user_input)
+        print(f"Assistant: {response}\n")
+
+
+if __name__ == "__main__":
+    main()
