@@ -1,0 +1,56 @@
+from flask import Flask, request, jsonify
+from langchain.chains import RetrievalQA
+from langchain.vectorstores import FAISS
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.llms import HuggingFacePipeline
+from langchain.document_loaders import TextLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from transformers import pipeline
+import os
+import uuid
+
+# Initialize Flask app
+app = Flask(__name__)
+
+# In-memory session history
+session_history = []
+
+# Load documents & create FAISS index
+loader = TextLoader("data/sample.txt")  # Replace with your document path
+documents = loader.load()
+text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+texts = text_splitter.split_documents(documents)
+
+embedding = HuggingFaceEmbeddings()
+vectorstore = FAISS.from_documents(texts, embedding)
+
+# Load TinyLlama (replace with your model name if needed)
+generation_pipeline = pipeline("text-generation", model="TinyLlama/TinyLlama-1.1B-Chat-v1.0")
+llm = HuggingFacePipeline(pipeline=generation_pipeline)
+
+# Create retrieval QA chain
+qa_chain = RetrievalQA.from_chain_type(llm=llm, retriever=vectorstore.as_retriever())
+
+@app.route("/ask", methods=["POST"])
+def ask():
+    data = request.json
+    question = data.get("question")
+    if not question:
+        return jsonify({"error": "Missing question"}), 400
+
+    answer = qa_chain.run(question)
+    qa_pair = {"question": question, "answer": answer}
+    session_history.append(qa_pair)
+
+    # Log to file (append mode)
+    with open("qa_log.txt", "a") as f:
+        f.write(f"Q: {question}\nA: {answer}\n\n")
+
+    return jsonify({"answer": answer})
+
+@app.route("/history", methods=["GET"])
+def history():
+    return jsonify(session_history)
+
+if __name__ == "__main__":
+    app.run(debug=True)
