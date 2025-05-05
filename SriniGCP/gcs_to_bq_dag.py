@@ -6,7 +6,7 @@ from airflow.utils.dates import days_ago
 # Set up default arguments
 default_args = {
     "owner": "airflow",
-    "depends_on_past": False,
+    "depends_on_past": False, ---
     "start_date": days_ago(1),
     "retries": 1,
 }
