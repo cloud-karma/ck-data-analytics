@@ -1,0 +1,105 @@
+from flask import Flask, request, jsonify
+from langchain.llms import HuggingFaceHub
+from langchain.embeddings import SentenceTransformerEmbeddings
+from langchain.vectorstores import FAISS  # Or Chroma
+from langchain.chains import ConversationalRetrievalChain
+from langchain.memory import ConversationBufferMemory
+import logging
+import json
+
+app = Flask(__name__)
+
+# --- Configuration ---
+HUGGINGFACEHUB_API_TOKEN = "YOUR_HUGGINGFACEHUB_API_TOKEN"  # Replace with your actual token
+MODEL_ID = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+EMBEDDINGS_MODEL = "all-MiniLM-L6-v2"
+VECTORSTORE_PATH = "vectorstore.faiss"  # Or your Chroma path
+LOG_FILE = "assistant_log.jsonl"
+
+# --- Initialize Logging ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# --- Initialize Components ---
+llm = HuggingFaceHub(repo_id=MODEL_ID, huggingfacehub_api_token=HUGGINGFACEHUB_API_TOKEN)
+embeddings = SentenceTransformerEmbeddings(model_name=EMBEDDINGS_MODEL)
+
+try:
+    vectorstore = FAISS.load_local(VECTORSTORE_PATH, embeddings)  # Or Chroma.from_persist_directory(...)
+except Exception as e:
+    logging.error(f"Error loading vectorstore: {e}. Ensure the vectorstore exists or create it.")
+    vectorstore = None
+
+memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+qa = ConversationalRetrievalChain.from_llm(llm, vectorstore.as_retriever() if vectorstore else None, memory=memory)
+
+# --- Helper Function for Logging ---
+def log_interaction(question, answer, rating=None):
+    log_data = {
+        "timestamp": datetime.datetime.now().isoformat(),
+        "question": question,
+        "answer": answer,
+        "rating": rating
+    }
+    with open(LOG_FILE, "a") as f:
+        f.write(json.dumps(log_data) + "\n")
+    logging.info(f"Logged interaction: Question='{question}', Answer='{answer}', Rating={rating}")
+
+# --- API Endpoints ---
+
+@app.route("/ask", methods=["POST"])
+def ask():
+    data = request.get_json()
+    if not data or "question" not in data:
+        return jsonify({"error": "Missing 'question' in request body"}), 400
+    question = data["question"]
+
+    result = qa({"question": question})
+    answer = result["answer"]
+
+    log_interaction(question, answer)
+
+    return jsonify({"answer": answer})
+
+@app.route("/rate", methods=["POST"])
+def rate():
+    data = request.get_json()
+    if not data or "question" not in data or "rating" not in data:
+        return jsonify({"error": "Missing 'question' or 'rating' in request body"}), 400
+    question = data["question"]
+    rating = data["rating"]
+
+    # Basic validation for rating
+    if not isinstance(rating, int) or rating < 1 or rating > 5:
+        return jsonify({"error": "Invalid rating. Must be an integer between 1 and 5"}), 400
+
+    # Need a way to retrieve the last answer for the given question.
+    # This simple in-memory approach might not be robust for production.
+    history_data = memory.load_memory_variables({})["chat_history"]
+    last_interaction = None
+    for i in reversed(history_data):
+        if hasattr(i, 'content') and hasattr(i, 'type') and i.type == 'human' and i.content == question:
+            # The immediately following message should be the bot's answer
+            try:
+                last_interaction = history_data[history_data.index(i) + 1]
+                break
+            except IndexError:
+                pass
+
+    if last_interaction and hasattr(last_interaction, 'content'):
+        log_interaction(question, last_interaction.content, rating)
+        return jsonify({"message": "Rating submitted successfully"})
+    else:
+        return jsonify({"error": "Could not find the corresponding question to rate"}), 404
+
+@app.route("/history", methods=["GET"])
+def history():
+    history_data = memory.load_memory_variables({})["chat_history"]
+    formatted_history = []
+    for item in history_data:
+        if hasattr(item, 'content') and hasattr(item, 'type'):
+            formatted_history.append({"type": item.type, "content": item.content})
+    return jsonify({"history": formatted_history})
+
+if __name__ == "__main__":
+    import datetime
+    app.run(debug=True)
